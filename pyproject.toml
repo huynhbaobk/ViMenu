@@ -1,0 +1,18 @@
+[project]
+name = "vimenu"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "aiofiles==23.2.1",
+    "fastapi==0.104.1",
+    "httpx==0.25.2",
+    "pillow==10.1.0",
+    "pydantic==2.5.0",
+    "pydantic-settings==2.1.0",
+    "python-dotenv==1.0.0",
+    "python-multipart==0.0.6",
+    "redis==5.0.1",
+    "uvicorn==0.24.0",
+]

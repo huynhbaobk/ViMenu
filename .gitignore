@@ -65,3 +65,5 @@ htmlcov/
 .dockerignore
 
 .claude
+
+my_test/

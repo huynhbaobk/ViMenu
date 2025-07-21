@@ -12,30 +12,38 @@ logger = get_logger(__name__)
 
 
 class OCRService:
-    def __init__(self):
-        self.api_url = "https://api-inference.huggingface.co/models/Viet-Mistral/Vintern-1B"
-        self.headers = {
-            "Authorization": f"Bearer {settings.HF_API_TOKEN}",
+    def __init__(self, api_url: str = None, headers: dict = None):
+        self.api_url = api_url
+        self.headers = headers or {
+            # Uncomment the next line if you have an API token
             "Content-Type": "application/json"
         }
 
-    async def extract_menu_text(self, image_bytes: bytes) -> OCRResult:
-        """Extract menu text from image using Vintern-1B"""
-        
+        if not self.api_url:
+            raise ValueError("API URL must be provided for OCRService")
+
+    async def extract_menu_text(self, image: bytes or str) -> OCRResult:
         try:
-            # Convert image to base64
-            image_base64 = base64.b64encode(image_bytes).decode('utf-8')
-            
+            if isinstance(image, bytes):
+                # Convert image to base64
+                image_base64 = base64.b64encode(image).decode('utf-8')
+                image_input = f"data:image/jpeg;base64,{image_base64}"
+            elif isinstance(image, str) and (image.startswith("http://") or image.startswith("https://")):
+                # Use image URL directly
+                image_input = image
+            else:
+                raise ValueError("Input must be bytes or a valid image URL.")
+
             # Prepare prompt for Vietnamese menu extraction
             prompt = self._create_menu_extraction_prompt()
             
             payload = {
                 "inputs": {
-                    "image": f"data:image/jpeg;base64,{image_base64}",
+                    "image": image_input,
                     "question": prompt
                 },
                 "parameters": {
-                    "max_new_tokens": 500,
+                    "max_new_tokens": 300,
                     "temperature": 0.3,
                     "top_p": 0.9
                 }

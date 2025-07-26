@@ -2,7 +2,7 @@ import json
 import redis.asyncio as redis
 from typing import Optional
 from datetime import timedelta
-from app.models.schemas import MenuAnalysisResponse, Recipe
+from app.models.schemas import MenuAnalysisResponse
 from app.core.config import settings
 from app.core.logging import get_logger
 from app.services.recipe_service import RecipeService
@@ -13,7 +13,10 @@ logger = get_logger(__name__)
 class CacheService:
     def __init__(self):
         self.redis_client = None
-        self.recipe_service = RecipeService()
+        self.recipe_service = RecipeService(
+            api_url=settings.OCR_API_URL,
+            model=settings.MODEL_ID,
+        )
         self.default_ttl = timedelta(hours=24)
 
     async def _get_redis_client(self):
@@ -70,44 +73,6 @@ class CacheService:
             logger.error(f"Error getting cached analysis: {e}")
             return None
 
-    async def cache_recipe(self, request_id: str, dish_name: str, recipe: Recipe) -> bool:
-        """Cache recipe for a dish"""
-        try:
-            client = await self._get_redis_client()
-            if not client:
-                return False
-
-            key = f"recipe:{request_id}:{dish_name}"
-            value = recipe.model_dump_json()
-            await client.setex(key, self.default_ttl, value)
-            
-            logger.info(f"Cached recipe for {dish_name} in request {request_id}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Error caching recipe: {e}")
-            return False
-
-    async def get_recipe(self, request_id: str, dish_name: str) -> Optional[Recipe]:
-        """Get cached recipe for a dish"""
-        try:
-            client = await self._get_redis_client()
-            if not client:
-                return None
-
-            key = f"recipe:{request_id}:{dish_name}"
-            value = await client.get(key)
-            
-            if value:
-                data = json.loads(value)
-                return Recipe(**data)
-            
-            return None
-        
-        except Exception as e:
-            logger.error(f"Error getting cached recipe: {e}")
-            return None
-
     async def cache_ingredients(self, request_id: str, dish_name: str, ingredients: list) -> bool:
         """Cache ingredients for a dish"""
         try:
@@ -140,45 +105,15 @@ class CacheService:
             value = await client.get(key)
             
             if value:
+                logger.info(f"Retrieved cached ingredients for {dish_name} in request {request_id}")
                 return json.loads(value)
             
+            logger.info(f"No cached ingredients found for {dish_name} in request {request_id}")
             return None
         
         except Exception as e:
             logger.error(f"Error getting cached ingredients: {e}")
             return None
-
-    async def generate_and_cache_recipe(self, request_id: str, dish) -> None:
-        """Generate recipe and cache it"""
-        try:
-            # Check if recipe already exists
-            cached_recipe = await self.get_recipe(request_id, dish.name)
-            if cached_recipe:
-                dish.recipe = cached_recipe
-                return
-
-            # Generate new recipe
-            recipe = await self.recipe_service.generate_recipe(dish.name)
-            
-            # Cache the recipe
-            await self.cache_recipe(request_id, dish.name, recipe)
-            
-            # Update the dish object
-            dish.recipe = recipe
-            
-            # Also update the cached analysis
-            analysis = await self.get_analysis(request_id)
-            if analysis:
-                for d in analysis.dishes:
-                    if d.name == dish.name:
-                        d.recipe = recipe
-                        break
-                await self.cache_analysis(request_id, analysis)
-            
-            logger.info(f"Generated and cached recipe for {dish.name}")
-            
-        except Exception as e:
-            logger.error(f"Error generating recipe for {dish.name}: {e}")
 
     async def generate_and_cache_ingredients(self, request_id: str, dish) -> None:
         """Generate ingredients and cache them"""
@@ -194,6 +129,7 @@ class CacheService:
                     dish.ingredients = cached_ingredients
                 elif isinstance(dish, dict):
                     dish['ingredients'] = cached_ingredients
+                logger.info(f"Using cached ingredients for {dish_name}: {cached_ingredients}")
                 return
 
             # Generate ingredients from recipe service
@@ -204,8 +140,12 @@ class CacheService:
                 ingredients = recipe.ingredients
             elif isinstance(recipe, dict) and 'ingredients' in recipe:
                 ingredients = recipe['ingredients']
+            elif isinstance(recipe, str):
+                ingredients = recipe.split(",")
             else:
                 ingredients = []
+
+            logger.info(f"Last result generated ingredients for {dish_name}: {ingredients}")
             
             # Cache the ingredients
             await self.cache_ingredients(request_id, dish_name, ingredients)

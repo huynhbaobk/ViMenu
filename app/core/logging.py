@@ -3,42 +3,47 @@ import sys
 import os
 
 
-def setup_logging(
-    extra_loggers: dict = None
-) -> None:
+def setup_logging(extra_loggers: dict = None) -> None:
     """Setup application logging
 
     Args:
-        extra_loggers (dict, optional): Dictionary of logger names and their levels.
-            Example: {"uvicorn": logging.INFO, "httpx": logging.WARNING}
-            By default, sets 'uvicorn' to INFO and 'httpx' to WARNING.
+        extra_loggers (dict, optional): Logger names and levels.
+            Default: {"uvicorn": INFO, "httpx": WARNING}
     """
-    # Ensure logs directory exists
-    os.makedirs("logs", exist_ok=True)
-    # Configure root logger
+    log_file = "logs/app.log"
+
+    # Ensure log directory exists
+    try:
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+    except Exception as e:
+        print(f"[Logging Setup Warning] Could not create logs dir: {e}", file=sys.stderr)
+
+    handlers = [logging.StreamHandler(sys.stdout)]
+
+    # Try to add FileHandler
+    try:
+        handlers.append(logging.FileHandler(log_file, encoding="utf-8"))
+    except PermissionError as e:
+        print(f"[Logging Setup Warning] Cannot write to log file '{log_file}': {e}", file=sys.stderr)
+
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        handlers=[
-            logging.StreamHandler(sys.stdout),
-            logging.FileHandler("logs/app.log", encoding="utf-8")
-        ],
+        handlers=handlers,
         force=True
     )
-    # Set specific loggers
+
+    # Set levels for known loggers
     if extra_loggers is None:
         extra_loggers = {
             "uvicorn": logging.INFO,
             "httpx": logging.WARNING
         }
+
     for logger_name, level in extra_loggers.items():
         logging.getLogger(logger_name).setLevel(level)
-    # Set specific loggers
-    logging.getLogger("uvicorn").setLevel(logging.INFO)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
-    logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Get logger instance"""
+    """Get logger instance by name"""
     return logging.getLogger(name)

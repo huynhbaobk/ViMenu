@@ -367,8 +367,10 @@ class MenuApp {
         const container = document.getElementById(`ingredients-${index}`);
         if (!container) return;
 
+        console.log("Ingredients at index", index, ":", ingredients);
+
         if (isError) {
-            container.innerHTML = '<div class="ingredients-empty">Đang chuẩn bị nguyên liệu...</div>';
+            container.innerHTML = '<div class="ingredients-empty"> Đang Đang  Đang chuẩn bị nguyên liệu...</div>';
             return;
         }
 
@@ -377,22 +379,26 @@ class MenuApp {
             return;
         }
 
-        // Convert ingredients to plain text list
-        const ingredientsList = ingredients
-            .slice(0, 4)
-            .map(ing => ing.item)
-            .join(', ');
+        let ingredientsText = '';
 
-        const moreCount = ingredients.length > 4 ? ingredients.length - 4 : 0;
-        const moreText = moreCount > 0 ? ` và ${moreCount} loại khác` : '';
+        if (typeof ingredients === 'string') {
+            // Trường hợp chuỗi văn bản đơn giản
+            ingredientsText = ingredients;
+        } else if (Array.isArray(ingredients)) {
+            // Trường hợp danh sách object như cũ
+            ingredientsText = ingredients.map(ing => ing.item || '').filter(Boolean).join(', ');
+        }
+
+        console.log("Formatted ingredients text:", ingredientsText);
 
         container.innerHTML = `
             <div class="ingredients-list">
                 <div class="ingredient-item-text">
-                    ${ingredientsList}${moreText}
+                    ${ingredientsText}
                 </div>
             </div>
         `;
+
     }
 
 

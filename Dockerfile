@@ -1,4 +1,4 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 # Set working directory
 WORKDIR /app
@@ -7,22 +7,30 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Install uv (https://github.com/astral-sh/uv)
+RUN pip install --no-cache-dir uv
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy only pyproject.toml and source code early (for caching layers)
+COPY pyproject.toml ./
+COPY app ./app
 
-# Copy application code
+# Install Python dependencies directly from pyproject.toml
+RUN uv pip install --system ".[all]" --editable .
+
+# Copy the rest of your app code if needed (e.g., scripts, static, etc.)
 COPY . .
 
-# Create static directory if it doesn't exist
-RUN mkdir -p static
+# Tạo user không phải root
+RUN useradd -m -u 1000 appuser
 
-# Create non-root user
-RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+# Tạo thư mục static và logs, đảm bảo quyền thuộc về appuser
+RUN mkdir -p /app/static /app/logs && \
+    chown -R appuser:appuser /app
+
+# Set user không phải root
 USER appuser
 
 # Expose port

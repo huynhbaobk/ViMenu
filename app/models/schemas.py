@@ -15,33 +15,12 @@ class OCRResult(BaseModel):
     raw_text: str = Field(..., description="Raw text extracted from image")
 
 
-class RecipeStep(BaseModel):
-    """Individual recipe step"""
-    step_number: int
-    instruction: str
-    duration_minutes: Optional[int] = None
-
-
-class Recipe(BaseModel):
-    """Complete recipe for a dish"""
-    dish_name: str
-    description: str
-    ingredients: List[Dict[str, str]]  # [{"item": "Bún", "quantity": "200g"}]
-    instructions: List[RecipeStep]
-    prep_time: int  # minutes
-    cook_time: int  # minutes
-    difficulty: str = Field(..., description="Easy, Medium, Hard")
-    servings: int = 1
-    nutrition_info: Optional[Dict[str, str]] = None
-
-
 class DishDetail(BaseModel):
     """Complete dish information"""
     name: str
     price: Optional[str] = None
     image_url: Optional[str] = None
-    ingredients: Optional[List[Dict[str, str]]] = None  # Quick ingredients list
-    recipe: Optional[Recipe] = None
+    ingredients: Optional[str] = None  # Quick ingredients list
 
 
 class MenuAnalysisRequest(BaseModel):

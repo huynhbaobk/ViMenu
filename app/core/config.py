@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     
     # Hugging Face settings
     HF_API_TOKEN: str = os.getenv("HF_API_TOKEN", "")
-    VINTERN_MODEL_ID: str = "Viet-Mistral/Vintern-1B"
+    MODEL_ID: str = os.getenv("MODEL_ID", "5CD-AI/Vintern-1B-v3_5")
+    OCR_API_URL: str = os.getenv("OCR_API_URL", "http://5cdaiserver.ddns.net:8000/v1")
     
     # Google Custom Search settings
     GOOGLE_API_KEY: str = os.getenv("GOOGLE_API_KEY", "")

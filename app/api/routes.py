@@ -25,9 +25,15 @@ logger = get_logger(__name__)
 
 api_router = APIRouter(prefix="/api/v1")
 
-ocr_service = OCRService()
+ocr_service = OCRService(
+    api_url=settings.OCR_API_URL,
+    model=settings.MODEL_ID,
+)
 image_service = ImageService()
-recipe_service = RecipeService()
+recipe_service = RecipeService(
+    api_url=settings.OCR_API_URL,
+    model=settings.MODEL_ID,
+)
 cache_service = CacheService()
 
 
@@ -95,14 +101,6 @@ async def analyze_menu(
                     dish_detail
                 )
             
-            # Add background task for full recipe generation if requested
-            if include_recipes:
-                background_tasks.add_task(
-                    cache_service.generate_and_cache_recipe,
-                    request_id,
-                    dish_detail
-                )
-            
             dishes.append(dish_detail)
         
         response = MenuAnalysisResponse(
@@ -131,22 +129,6 @@ async def get_analysis_status(request_id: str):
         raise HTTPException(status_code=404, detail="Analysis not found")
     
     return cached_result
-
-
-@api_router.get("/recipes/{request_id}/{dish_name}")
-async def get_recipe(request_id: str, dish_name: str):
-    """Get recipe for a specific dish"""
-    if settings.USE_MOCK_SERVICES:
-        recipe = None
-    else:
-        recipe = await cache_service.get_recipe(request_id, dish_name)
-    if not recipe:
-        # Generate recipe on-demand
-        recipe = await recipe_service.generate_recipe(dish_name)
-        if not settings.USE_MOCK_SERVICES:
-            await cache_service.cache_recipe(request_id, dish_name, recipe)
-    
-    return recipe
 
 
 @api_router.get("/ingredients/{request_id}/{dish_name}")
@@ -192,12 +174,16 @@ async def get_batch_ingredients(request_data: dict):
                 # Generate ingredients on-demand
                 try:
                     recipe = await recipe_service.generate_recipe(dish_name)
-                    
+
+                    logger.info(f"CACHE Generating ingredients for {dish_name}: {recipe}")
+
                     # Handle both Recipe object and dict
                     if hasattr(recipe, 'ingredients'):
                         ingredients = recipe.ingredients
                     elif isinstance(recipe, dict) and 'ingredients' in recipe:
                         ingredients = recipe['ingredients']
+                    elif isinstance(recipe, str):
+                        ingredients = recipe.split(",")
                     else:
                         ingredients = []
                         
@@ -209,6 +195,7 @@ async def get_batch_ingredients(request_data: dict):
             logger.error(f"Error processing ingredients for {dish_name}: {e}")
             ingredients = []
         
+        logger.info(f"Returning ingredients for {dish_name}: {ingredients}")
         results.append({
             "dish_name": dish_name,
             "ingredients": ingredients

@@ -23,12 +23,12 @@ class ImageService:
             params = {
                 "key": self.api_key,
                 "cx": self.cse_id,
-                "q": f"{dish_name} Vietnamese food",
+                "q": f"{dish_name}",
                 "searchType": "image",
                 "num": 1,
-                "imgSize": "medium",
-                "safe": "high"
             }
+
+            logger.info(f"Fetching image for dish: {dish_name} with params: {params}")
 
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.get(self.base_url, params=params)

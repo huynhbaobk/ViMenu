@@ -1,70 +1,113 @@
-from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import APIRouter, UploadFile, File, HTTPException, BackgroundTasks, Depends
 from fastapi.responses import JSONResponse
 from typing import List, Optional
 import asyncio
 import uuid
 from datetime import datetime
 
-from app.models.schemas import MenuAnalysisRequest, MenuAnalysisResponse, DishDetail
+from app.models.schemas import MenuAnalysisRequest, MenuAnalysisResponse, DishDetail, AnalysisStatus
 from app.core.config import settings
 from app.core.logging import get_logger
-
-# Import services based on mock mode
-if settings.USE_MOCK_SERVICES:
-    from app.services.mock_service import MockOCRService as OCRService
-    from app.services.mock_service import MockImageService as ImageService
-    from app.services.mock_service import MockRecipeService as RecipeService
-else:
-    from app.services.ocr_service import OCRService
-    from app.services.image_service import ImageService
-    from app.services.recipe_service import RecipeService
-
-from app.services.cache_service import CacheService
+from app.core.dependencies import (
+    get_ocr_service, 
+    get_image_service, 
+    get_ingredient_service, 
+    get_cache_service
+)
+from app.core.exceptions import OCRException, ImageProcessingException, CacheException
 
 logger = get_logger(__name__)
 
-api_router = APIRouter(prefix="/api/v1")
+api_router = APIRouter(prefix="/api/v1", tags=["menu-analysis"])
 
-ocr_service = OCRService(
-    api_url=settings.OCR_API_URL,
-    model=settings.MODEL_ID,
-)
-image_service = ImageService()
-recipe_service = RecipeService(
-    api_url=settings.OCR_API_URL,
-    model=settings.MODEL_ID,
-)
-cache_service = CacheService()
+
+def validate_image_file(file: UploadFile) -> None:
+    """Validate uploaded image file"""
+    if not file.content_type or not file.content_type.startswith('image/'):
+        raise HTTPException(status_code=400, detail="File must be an image")
+
+
+def validate_file_size(contents: bytes) -> None:
+    """Validate file size"""
+    if len(contents) > settings.MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413, 
+            detail=f"File too large. Max size: {settings.MAX_FILE_SIZE} bytes"
+        )
+
+
+async def process_dish_images_and_ingredients(
+    dishes: List, 
+    image_service, 
+    ingredient_service,
+    request_id: str,
+    cache_service
+) -> List[DishDetail]:
+    """Process images and ingredients for dishes concurrently"""
+    try:
+        # Process images and ingredients in parallel
+        image_tasks = [image_service.get_dish_image(dish.name) for dish in dishes]
+        ingredient_tasks = [ingredient_service.generate_ingredients(dish.name) for dish in dishes]
+        
+        images, ingredients_list = await asyncio.gather(
+            asyncio.gather(*image_tasks, return_exceptions=True),
+            asyncio.gather(*ingredient_tasks, return_exceptions=True)
+        )
+        
+        dish_details = []
+        for dish, image_url, ingredients in zip(dishes, images, ingredients_list):
+            # Handle exceptions
+            if isinstance(image_url, Exception):
+                image_url = None
+            if isinstance(ingredients, Exception):
+                ingredients = ""
+            
+            dish_detail = DishDetail(
+                name=dish.name,
+                price=dish.price,
+                image_url=image_url,
+                ingredients=ingredients
+            )
+            dish_details.append(dish_detail)
+            
+            # Cache the ingredients
+            if ingredients:
+                await cache_service.cache_ingredients(request_id, dish.name, ingredients)
+        
+        return dish_details
+        
+    except Exception as e:
+        logger.error(f"Error processing dishes: {e}")
+        # Fallback: create dishes without images and ingredients
+        return [
+            DishDetail(name=dish.name, price=dish.price, image_url=None, ingredients="")
+            for dish in dishes
+        ]
 
 
 @api_router.post("/analyze-menu", response_model=MenuAnalysisResponse)
 async def analyze_menu(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
-    include_recipes: bool = True
+    ocr_service=Depends(get_ocr_service),
+    image_service=Depends(get_image_service),
+    ingredient_service=Depends(get_ingredient_service),
+    cache_service=Depends(get_cache_service)
 ):
     """Analyze menu image and extract dish information"""
     
     # Validate file
-    if not file.content_type or not file.content_type.startswith('image/'):
-        raise HTTPException(status_code=400, detail="File must be an image")
+    validate_image_file(file)
     
-    # Check file size
-    file_size = 0
+    # Read and validate file size
     contents = await file.read()
-    file_size = len(contents)
-    
-    if file_size > settings.MAX_FILE_SIZE:
-        raise HTTPException(
-            status_code=413, 
-            detail=f"File too large. Max size: {settings.MAX_FILE_SIZE} bytes"
-        )
+    validate_file_size(contents)
     
     # Generate unique request ID
     request_id = str(uuid.uuid4())
     
     try:
-        # Extract text from image using Vintern-1B
+        # Extract text from image using OCR
         logger.info(f"Starting OCR for request {request_id}")
         ocr_result = await ocr_service.extract_menu_text(contents)
         
@@ -72,45 +115,28 @@ async def analyze_menu(
             return MenuAnalysisResponse(
                 request_id=request_id,
                 dishes=[],
-                status="no_dishes_found",
+                status=AnalysisStatus.NO_DISHES_FOUND,
                 message="No dishes found in the image"
             )
         
-        # Get images for dishes
-        logger.info(f"Fetching images for {len(ocr_result.dishes)} dishes")
-        image_tasks = [
-            image_service.get_dish_image(dish.name)
-            for dish in ocr_result.dishes
-        ]
-        images = await asyncio.gather(*image_tasks, return_exceptions=True)
-        
-        # Create dish details
-        dishes = []
-        for index, (dish, image_url) in enumerate(zip(ocr_result.dishes, images)):
-            dish_detail = DishDetail(
-                name=dish.name,
-                price=dish.price,
-                image_url=image_url if not isinstance(image_url, Exception) else None
-            )
-            
-            # Auto-generate ingredients for first 9 dishes
-            if index < 9:
-                background_tasks.add_task(
-                    cache_service.generate_and_cache_ingredients,
-                    request_id,
-                    dish_detail
-                )
-            
-            dishes.append(dish_detail)
+        # Process dishes with images and ingredients
+        logger.info(f"Processing {len(ocr_result.dishes)} dishes")
+        dishes = await process_dish_images_and_ingredients(
+            ocr_result.dishes, 
+            image_service, 
+            ingredient_service,
+            request_id,
+            cache_service
+        )
         
         response = MenuAnalysisResponse(
             request_id=request_id,
             dishes=dishes,
-            status="processing",
-            message="Menu analyzed successfully. Recipes being generated..."
+            status=AnalysisStatus.COMPLETED,
+            message=f"Menu analyzed successfully. Found {len(dishes)} dishes."
         )
         
-        # Cache initial response
+        # Cache the complete response
         await cache_service.cache_analysis(request_id, response)
         
         return response
@@ -121,7 +147,10 @@ async def analyze_menu(
 
 
 @api_router.get("/analysis/{request_id}", response_model=MenuAnalysisResponse)
-async def get_analysis_status(request_id: str):
+async def get_analysis_status(
+    request_id: str,
+    cache_service=Depends(get_cache_service)
+):
     """Get analysis status and results"""
     
     cached_result = await cache_service.get_analysis(request_id)
@@ -132,33 +161,35 @@ async def get_analysis_status(request_id: str):
 
 
 @api_router.get("/ingredients/{request_id}/{dish_name}")
-async def get_ingredients(request_id: str, dish_name: str):
+async def get_ingredients(
+    request_id: str, 
+    dish_name: str,
+    cache_service=Depends(get_cache_service),
+    ingredient_service=Depends(get_ingredient_service)
+):
     """Get ingredients for a specific dish"""
     
-    ingredients = await cache_service.get_ingredients(request_id, dish_name)
-    if not ingredients:
-        # Generate ingredients on-demand
-        try:
-            recipe = await recipe_service.generate_recipe(dish_name)
-            
-            # Handle both Recipe object and dict
-            if hasattr(recipe, 'ingredients'):
-                ingredients = recipe.ingredients
-            elif isinstance(recipe, dict) and 'ingredients' in recipe:
-                ingredients = recipe['ingredients']
-            else:
-                ingredients = []
-                
+    try:
+        ingredients = await cache_service.get_ingredients(request_id, dish_name)
+        
+        if not ingredients:
+            # Generate ingredients on-demand
+            ingredients = await ingredient_service.generate_ingredients(dish_name)
             await cache_service.cache_ingredients(request_id, dish_name, ingredients)
-        except Exception as e:
-            logger.error(f"Error generating ingredients for {dish_name}: {e}")
-            ingredients = []
-    
-    return {"dish_name": dish_name, "ingredients": ingredients}
+        
+        return {"dish_name": dish_name, "ingredients": ingredients}
+        
+    except Exception as e:
+        logger.error(f"Error getting ingredients for {dish_name}: {e}")
+        return {"dish_name": dish_name, "ingredients": ""}
 
 
 @api_router.post("/ingredients/batch")
-async def get_batch_ingredients(request_data: dict):
+async def get_batch_ingredients(
+    request_data: dict,
+    cache_service=Depends(get_cache_service),
+    ingredient_service=Depends(get_ingredient_service)
+):
     """Get ingredients for multiple dishes"""
     request_id = request_data.get("request_id")
     dish_names = request_data.get("dish_names", [])
@@ -166,39 +197,36 @@ async def get_batch_ingredients(request_data: dict):
     if not request_id or not dish_names:
         raise HTTPException(status_code=400, detail="request_id and dish_names are required")
     
-    results = []
-    for dish_name in dish_names:
+    # Limit batch size
+    if len(dish_names) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 dishes per batch request")
+    
+    # Process dishes concurrently
+    async def process_dish(dish_name: str):
         try:
             ingredients = await cache_service.get_ingredients(request_id, dish_name)
+            
             if not ingredients:
-                # Generate ingredients on-demand
-                try:
-                    recipe = await recipe_service.generate_recipe(dish_name)
-
-                    logger.info(f"CACHE Generating ingredients for {dish_name}: {recipe}")
-
-                    # Handle both Recipe object and dict
-                    if hasattr(recipe, 'ingredients'):
-                        ingredients = recipe.ingredients
-                    elif isinstance(recipe, dict) and 'ingredients' in recipe:
-                        ingredients = recipe['ingredients']
-                    elif isinstance(recipe, str):
-                        ingredients = recipe.split(",")
-                    else:
-                        ingredients = []
-                        
-                    await cache_service.cache_ingredients(request_id, dish_name, ingredients)
-                except Exception as e:
-                    logger.error(f"Error generating ingredients for {dish_name}: {e}")
-                    ingredients = []
+                ingredients = await ingredient_service.generate_ingredients(dish_name)
+                await cache_service.cache_ingredients(request_id, dish_name, ingredients)
+            
+            return {"dish_name": dish_name, "ingredients": ingredients}
+            
         except Exception as e:
             logger.error(f"Error processing ingredients for {dish_name}: {e}")
-            ingredients = []
-        
-        logger.info(f"Returning ingredients for {dish_name}: {ingredients}")
-        results.append({
-            "dish_name": dish_name,
-            "ingredients": ingredients
-        })
+            return {"dish_name": dish_name, "ingredients": ""}
+    
+    # Execute all dish processing concurrently
+    results = await asyncio.gather(*[process_dish(name) for name in dish_names])
     
     return {"results": results}
+
+
+@api_router.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    return {
+        "status": "healthy", 
+        "version": "1.0.0",
+        "timestamp": datetime.utcnow().isoformat()
+    }

@@ -1,6 +1,34 @@
-# Vietnamese Menu Analyzer
+# ViMenu - Vietnamese Menu Analyzer
 
-A high-standard web application for analyzing Vietnamese menu images using AI. Built with FastAPI, modern JavaScript, and integrated with Vietnamese AI models.
+AI-powered Vietnamese menu extraction and recipe generation using advanced OCR and recipe AI models.
+
+## 🚀 Recent Optimizations & Clean Code Improvements
+
+This project has been significantly optimized for production use with clean code practices:
+
+### 🏗️ **Architecture Improvements**
+- **Dependency Injection**: Centralized service management with proper IoC container
+- **Clean Error Handling**: Custom exception hierarchy with proper error responses
+- **Enhanced Configuration**: Type-safe settings with validation and environment support
+- **Middleware Stack**: Request logging, rate limiting, security headers, and error handling
+
+### 🔧 **Service Layer Optimizations**
+- **Cache Service**: Redis connection pooling, context managers, and proper cleanup
+- **OCR Service**: Retry logic, timeout handling, and improved text parsing
+- **Recipe Service**: Batch processing, structured ingredient extraction
+- **Image Service**: Caching, fallback images, and optimized search queries
+
+### 🛡️ **Security & Performance**
+- **Rate Limiting**: Per-IP rate limiting with configurable limits
+- **Security Headers**: CSP, CSRF protection, and secure headers
+- **Input Validation**: Comprehensive file upload and request validation
+- **Resource Management**: Proper connection pooling and cleanup
+
+### 📊 **Monitoring & Observability**
+- **Request Tracing**: Unique request IDs and structured logging
+- **Health Checks**: Comprehensive health monitoring with service status
+- **Metrics Endpoint**: Cache statistics and performance metrics
+- **Error Tracking**: Detailed error logging with context
 
 ## Features
 

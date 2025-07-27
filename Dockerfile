@@ -1,36 +1,31 @@
-FROM python:3.12-slim
+# ViMenu - Production Dockerfile
+FROM python:3.11-slim
 
-# Set working directory
+# Set environment variables
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    ENVIRONMENT=production
+
+# Set work directory
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
-    curl \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        gcc \
+        curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install uv (https://github.com/astral-sh/uv)
-RUN pip install --no-cache-dir uv
+# Install Python dependencies
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy only pyproject.toml and source code early (for caching layers)
-COPY pyproject.toml ./
-COPY app ./app
-
-# Install Python dependencies directly from pyproject.toml
-RUN uv pip install --system ".[all]" --editable .
-
-# Copy the rest of your app code if needed (e.g., scripts, static, etc.)
+# Copy application code
 COPY . .
 
-# Tạo user không phải root
-RUN useradd -m -u 1000 appuser
-
-# Tạo thư mục static và logs, đảm bảo quyền thuộc về appuser
-RUN mkdir -p /app/static /app/logs && \
-    chown -R appuser:appuser /app
-
-# Set user không phải root
+# Create non-root user
+RUN adduser --disabled-password --gecos '' appuser \
+    && chown -R appuser:appuser /app
 USER appuser
 
 # Expose port
@@ -38,7 +33,13 @@ EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD python -c "import requests; requests.get('http://localhost:8000/health', timeout=10)"
+    CMD curl -f http://localhost:8000/health || exit 1
 
 # Run the application
-CMD ["python", "-m", "app.main"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
+# Health check
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# Run the application using uv
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]

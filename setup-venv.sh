@@ -4,20 +4,18 @@ echo "🚀 Initializing Python project with uv..."
 
 # Step 1: Check uv
 if ! command -v uv &> /dev/null; then
-    echo "❌ 'uv' is not installed. Please run: pip install uv"
+    echo "❌ 'uv' is not installed. Please run: curl -LsSf https://astral.sh/uv/install.sh | sh"
     exit 1
 fi
 
-# Step 2: Initialize pyproject.toml if not present
-if [ ! -f pyproject.toml ]; then
-    echo "📄 Creating pyproject.toml..."
-    uv init
-fi
+# Step 2: Create virtual environment and sync dependencies
+echo "� Creating virtual environment and installing dependencies..."
+uv sync
 
-# Step 3: Read requirements.txt and add packages to pyproject.toml
-if [ -f requirements.txt ]; then
-    echo "📦 Adding packages from requirements.txt to pyproject.toml..."
-    xargs uv add < requirements.txt
+# Step 3: Activate virtual environment
+echo "✅ Virtual environment created successfully!"
+echo "� To activate the environment, run: source .venv/bin/activate"
+echo "🚀 To run the application, use: uv run uvicorn app.main:app --reload"
 else
     echo "⚠️ No requirements.txt found, skipping dependency addition."
 fi

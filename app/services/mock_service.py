@@ -3,11 +3,16 @@ Mock services for testing without external API calls
 """
 import asyncio
 from typing import List, Optional
-from app.models.schemas import OCRResult, DishInfo, Recipe, RecipeStep
+from app.models.schemas import OCRResult, DishInfo
+from app.core.config import settings
 
 
 class MockOCRService:
     """Mock OCR service for testing menu extraction"""
+    def __init__(self, api_url: str = settings.OCR_API_URL, headers: dict = None, model=""):
+        self.api_url = api_url
+        self.headers = headers or {}
+        self.model = model
     
     async def extract_menu_text(self, image_bytes: bytes) -> OCRResult:
         """Return mock menu data instead of calling API"""
@@ -99,7 +104,48 @@ class MockImageService:
         return "https://images.unsplash.com/photo-1563379926898-05f4575a45d8?w=400&q=80"
 
 
-class MockRecipeService:
+class MockIngredientService:
+    """Mock ingredient service for testing ingredient generation"""
+    def __init__(self, api_url: str = settings.OCR_API_URL, headers: dict = None, model=""):
+        self.api_url = api_url
+        self.headers = headers or {}
+        self.model = model
+
+    async def generate_ingredients(self, dish_name: str) -> str:
+        """Return mock ingredient text for Vietnamese dishes"""
+        return self._get_mock_ingredients(dish_name)
+
+    def _get_mock_ingredients(self, dish_name: str) -> str:
+        """Simple mock ingredients for Vietnamese dishes"""
+        ingredients = {
+            "bún bò huế": "Bún tươi, thịt bò, giò heo, sả, ớt hiểm",
+            "phở bò tái": "Bánh phở, thịt bò tái, hành tây, gừng, quế",
+            "bánh mì thịt nướng": "Bánh mì, thịt nướng, pate, dưa leo, ngò rí",
+            "cà phê sữa đá": "Cà phê phin, sữa đặc, đá viên",
+            "bánh xèo": "Bột bánh xèo, tôm, thịt ba rọi, giá đỗ, nghệ",
+            "gỏi cuốn tôm thịt": "Bánh tráng, tôm, thịt luộc, bún, rau thơm",
+            "cơm tấm sườn bì": "Cơm tấm, sườn nướng, bì, chả trứng",
+            "bún thịt nướng": "Bún tươi, thịt nướng, rau sống, nước mắm",
+            "hủ tiếu nam vang": "Hủ tiếu, tôm, thịt băm, gan, tim",
+            "bánh cuốn nóng": "Bánh cuốn, thịt băm, nấm mèo, hành khô",
+            "chả cá lã vọng": "Cá lang, nghệ, thì là, bún, bánh tráng",
+            "bún riêu cua": "Bún tươi, cua đồng, cà chua, đậu hũ",
+            "cao lầu hội an": "Mì cao lầu, thịt xá xíu, rau sống",
+            "mì quảng": "Mì quảng, tôm, thịt, trứng cút, bánh tráng",
+            "bánh canh cua": "Bánh canh, cua biển, giò heo, rau răm",
+            "chè ba màu": "Đậu đỏ, đậu xanh, thạch, nước cốt dừa",
+            "bánh tráng nướng": "Bánh tráng, trứng, hành lá, tôm khô",
+            "nem nướng nha trang": "Thịt heo, bánh hỏi, rau sống"
+        }
+        
+        dish_name_lower = dish_name.lower().strip()
+        
+        for key, ingredient_text in ingredients.items():
+            if key in dish_name_lower:
+                return ingredient_text
+        
+        # Default ingredients for unknown dishes
+        return "Nguyên liệu chính của món ăn truyền thống Việt Nam"
     """Mock recipe service for testing recipe generation"""
     
     async def generate_recipe(self, dish_name: str):
@@ -258,7 +304,7 @@ class MockRecipeService:
             "servings": 2
         }
         
-        return recipes.get(dish_name, default_recipe)
+        return ingredients
 
     def get_mock_ingredients_only(self, dish_name: str) -> List[dict]:
         """Get just the ingredients list for faster loading"""

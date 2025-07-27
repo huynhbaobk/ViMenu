@@ -116,68 +116,26 @@ async def analyze_menu(
 ):
     """Analyze menu image and extract dish information"""
     
-    # Generate unique request ID
-    request_id = str(uuid.uuid4())
-    
-    logger.info(f"📱 Received file upload request {request_id}")
+    logger.info(f"📱 Received file upload request")
     logger.info(f"📁 File info - Name: {file.filename}, Content-Type: {file.content_type}, Size: {file.size if hasattr(file, 'size') else 'unknown'}")
     
     try:
         # Validate file
         validate_image_file(file)
-        logger.info(f"✅ File validation passed for {request_id}")
+        logger.info(f"✅ File validation passed for")
         
         # Read and validate file size
         contents = await file.read()
         file_size = len(contents)
-        logger.info(f"📊 File read successfully - Size: {file_size} bytes for {request_id}")
+        logger.info(f"📊 File read successfully - Size: {file_size} bytes")
         
         validate_file_size(contents)
-        logger.info(f"✅ File size validation passed for {request_id}")
+        logger.info(f"✅ File size validation passed")
         
     except Exception as e:
-        logger.error(f"❌ File validation failed for {request_id}: {str(e)}")
+        logger.error(f"❌ File validation failed: {str(e)}")
         raise HTTPException(status_code=400, detail=f"File validation error: {str(e)}")
     
-    try:
-        # Extract text from image using OCR
-        logger.info(f"Starting OCR for request {request_id}")
-        ocr_result = await ocr_service.extract_menu_text(contents)
-        
-        if not ocr_result.dishes:
-            return MenuAnalysisResponse(
-                request_id=request_id,
-                dishes=[],
-                status=AnalysisStatus.NO_DISHES_FOUND,
-                message="No dishes found in the image"
-            )
-        
-        # Process dishes with images and ingredients
-        logger.info(f"Processing {len(ocr_result.dishes)} dishes")
-        dishes = await process_dish_images_and_ingredients(
-            ocr_result.dishes, 
-            image_service, 
-            ingredient_service,
-            request_id,
-            cache_service
-        )
-        
-        response = MenuAnalysisResponse(
-            request_id=request_id,
-            dishes=dishes,
-            status=AnalysisStatus.COMPLETED,
-            message=f"Menu analyzed successfully. Found {len(dishes)} dishes."
-        )
-        
-        # Cache the complete response
-        await cache_service.cache_analysis(request_id, response)
-        
-        return response
-        
-    except Exception as e:
-        logger.error(f"Error analyzing menu: {str(e)}")
-        raise HTTPException(status_code=500, detail="Internal server error")
-
 
 @api_router.get("/analysis/{request_id}", response_model=MenuAnalysisResponse)
 async def get_analysis_status(

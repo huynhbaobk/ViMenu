@@ -21,8 +21,16 @@ class Settings(BaseSettings):
         default_factory=lambda: [
             "http://localhost:3000",
             "http://localhost:8000",
+            "http://localhost:8080",
             "http://127.0.0.1:3000",
-            "http://127.0.0.1:8000"
+            "http://127.0.0.1:8000", 
+            "http://127.0.0.1:8080",
+            # Add support for local network access (mobile devices)
+            "http://192.168.*:8080",
+            "http://10.*:8080",
+            "http://172.*:8080",
+            # Allow any origin in development (remove in production)
+            "*"
         ],
         description="Allowed CORS origins"
     )

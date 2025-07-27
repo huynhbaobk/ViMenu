@@ -67,10 +67,10 @@ app.add_middleware(FileValidationMiddleware, max_file_size=settings.MAX_FILE_SIZ
 app.add_middleware(RateLimitMiddleware, calls_per_minute=settings.RATE_LIMIT_PER_MINUTE)
 app.add_middleware(RequestLoggingMiddleware)
 
-# CORS middleware
+# CORS middleware - More permissive for development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=["*"] if settings.is_development else settings.ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],

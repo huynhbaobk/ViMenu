@@ -18,7 +18,27 @@ from app.core.exceptions import OCRException, ImageProcessingException, CacheExc
 
 logger = get_logger(__name__)
 
-api_router = APIRouter(prefix="/api/v1", tags=["menu-analysis"])
+api_router = APIRouter(tags=["menu-analysis"])
+
+
+@api_router.get("/test")
+async def test_endpoint():
+    """Simple test endpoint to verify API is working"""
+    logger.info("📱 Test endpoint called")
+    return {"status": "ok", "message": "API is working", "timestamp": datetime.utcnow()}
+
+
+@api_router.post("/test-upload")
+async def test_upload(file: UploadFile = File(...)):
+    """Test file upload endpoint"""
+    logger.info(f"📱 Test upload called - File: {file.filename}, Type: {file.content_type}")
+    contents = await file.read()
+    return {
+        "status": "ok", 
+        "filename": file.filename,
+        "content_type": file.content_type,
+        "size": len(contents)
+    }
 
 
 def validate_image_file(file: UploadFile) -> None:
@@ -96,15 +116,28 @@ async def analyze_menu(
 ):
     """Analyze menu image and extract dish information"""
     
-    # Validate file
-    validate_image_file(file)
-    
-    # Read and validate file size
-    contents = await file.read()
-    validate_file_size(contents)
-    
     # Generate unique request ID
     request_id = str(uuid.uuid4())
+    
+    logger.info(f"📱 Received file upload request {request_id}")
+    logger.info(f"📁 File info - Name: {file.filename}, Content-Type: {file.content_type}, Size: {file.size if hasattr(file, 'size') else 'unknown'}")
+    
+    try:
+        # Validate file
+        validate_image_file(file)
+        logger.info(f"✅ File validation passed for {request_id}")
+        
+        # Read and validate file size
+        contents = await file.read()
+        file_size = len(contents)
+        logger.info(f"📊 File read successfully - Size: {file_size} bytes for {request_id}")
+        
+        validate_file_size(contents)
+        logger.info(f"✅ File size validation passed for {request_id}")
+        
+    except Exception as e:
+        logger.error(f"❌ File validation failed for {request_id}: {str(e)}")
+        raise HTTPException(status_code=400, detail=f"File validation error: {str(e)}")
     
     try:
         # Extract text from image using OCR

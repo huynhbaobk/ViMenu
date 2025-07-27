@@ -1,42 +1,42 @@
-# ViMenu - Production Dockerfile
-FROM python:3.11-slim
+# ViMenu - Development Dockerfile with uv
+FROM python:3.12-slim
 
 # Set environment variables
-ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1 \
-    ENVIRONMENT=production
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    UV_CACHE_DIR=/app/.uv-cache
 
-# Set work directory
+# Set working directory
 WORKDIR /app
 
-# Install system dependencies
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        gcc \
-        curl \
-    && rm -rf /var/lib/apt/lists/*
+# Install system dependencies and uv
+RUN apt-get update && apt-get install -y \
+    curl \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir uv
 
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Create user for development
+RUN useradd -m -u 1000 appuser
+
+# Create directories and set permissions early
+RUN mkdir -p /app/static /app/logs /app/.uv-cache && \
+    chown -R appuser:appuser /app
+
+# Switch to user before copying files
+USER appuser
+
+# Copy uv configuration files for better caching
+COPY --chown=appuser:appuser pyproject.toml uv.lock ./
+
+# Install Python dependencies using uv (including dev dependencies)
+RUN uv sync --frozen
 
 # Copy application code
-COPY . .
-
-# Create non-root user
-RUN adduser --disabled-password --gecos '' appuser \
-    && chown -R appuser:appuser /app
-USER appuser
+COPY --chown=appuser:appuser . .
 
 # Expose port
 EXPOSE 8000
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:8000/health || exit 1
-
-# Run the application
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
